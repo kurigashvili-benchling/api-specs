@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Specs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 20px;
+      background: #1b1b1b;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    .topbar select {
+      font-size: 14px;
+      padding: 4px 8px;
+    }
+    .topbar .title { font-weight: bold; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <span class="title">API Specs</span>
+    <label for="spec-select">Spec:</label>
+    <select id="spec-select"></select>
+  </div>
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+  <script>
+    const select = document.getElementById('spec-select');
+    let specs = [];
+
+    function render(url) {
+      SwaggerUIBundle({
+        url,
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: 'BaseLayout',
+      });
+    }
+
+    function onSelect(url, push) {
+      if (push) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('spec', url);
+        window.history.replaceState(null, '', '?' + params.toString());
+      }
+      render(url);
+    }
+
+    fetch('specs/specs.json')
+      .then((r) => r.json())
+      .then((data) => {
+        specs = data.specs;
+        specs.forEach((s) => {
+          const opt = document.createElement('option');
+          opt.value = s.url;
+          opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+
+        const requested = new URLSearchParams(window.location.search).get('spec');
+        const initial = specs.find((s) => s.url === requested) || specs[0];
+        select.value = initial.url;
+        onSelect(initial.url, false);
+
+        select.addEventListener('change', () => onSelect(select.value, true));
+      })
+      .catch((err) => {
+        document.getElementById('swagger-ui').textContent =
+          'Failed to load specs manifest: ' + err;
+      });
+  </script>
+</body>
+</html>

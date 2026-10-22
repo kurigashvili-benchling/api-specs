@@ -1,0 +1,362 @@
+openapi: 3.0.3
+info:
+  title: Deployment API
+  description: |
+    API for managing application deployments across environments.
+
+    Use it to trigger new deployments, track their progress, fetch logs and
+    events, cancel in-flight deployments, and roll back to a previous release.
+  version: 1.0.0
+  contact:
+    name: Platform Team
+    email: platform@example.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://api.staging.example.com/v1
+    description: Staging
+tags:
+  - name: deployments
+    description: Create and manage deployments
+  - name: environments
+    description: Inspect deployment targets
+
+paths:
+  /deployments:
+    get:
+      tags: [deployments]
+      summary: List deployments
+      operationId: listDeployments
+      parameters:
+        - name: environment
+          in: query
+          description: Filter by environment name
+          schema:
+            type: string
+        - name: service
+          in: query
+          description: Filter by service name
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by deployment status
+          schema:
+            $ref: '#/components/schemas/DeploymentStatus'
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: pageToken
+          in: query
+          description: Opaque cursor for the next page
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of deployments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [deployments]
+      summary: Create a deployment
+      operationId: createDeployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentCreate'
+      responses:
+        '201':
+          description: Deployment accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '409':
+          description: A deployment for this service is already in progress in the target environment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /deployments/{deploymentId}:
+    get:
+      tags: [deployments]
+      summary: Get a deployment
+      operationId: getDeployment
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '200':
+          description: The deployment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [deployments]
+      summary: Cancel a deployment
+      operationId: cancelDeployment
+      description: Cancels a queued or in-progress deployment. Completed deployments cannot be canceled.
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '200':
+          description: Deployment canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Deployment is already in a terminal state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /deployments/{deploymentId}/rollback:
+    post:
+      tags: [deployments]
+      summary: Roll back a deployment
+      operationId: rollbackDeployment
+      description: Creates a new deployment that restores the previous successful release.
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '201':
+          description: Rollback deployment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /deployments/{deploymentId}/logs:
+    get:
+      tags: [deployments]
+      summary: Stream deployment logs
+      operationId: getDeploymentLogs
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+        - name: since
+          in: query
+          description: Only return log lines after this timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: tail
+          in: query
+          description: Return only the last N lines
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+      responses:
+        '200':
+          description: Log lines (newline-delimited plain text)
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /deployments/{deploymentId}/events:
+    get:
+      tags: [deployments]
+      summary: List deployment events
+      operationId: listDeploymentEvents
+      description: Returns the lifecycle events of a deployment in chronological order.
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '200':
+          description: Deployment events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeploymentEvent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /environments:
+    get:
+      tags: [environments]
+      summary: List environments
+      operationId: listEnvironments
+      responses:
+        '200':
+          description: All deployment target environments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Environment'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  parameters:
+    DeploymentId:
+      name: deploymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error:
+      description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    DeploymentStatus:
+      type: string
+      enum: [queued, in_progress, succeeded, failed, canceled, rolled_back]
+
+    Deployment:
+      type: object
+      required: [id, service, environment, version, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        service:
+          type: string
+          example: billing-service
+        environment:
+          type: string
+          example: production
+        version:
+          type: string
+          description: Artifact version being deployed (semver or image tag)
+          example: 2.14.0
+        status:
+          $ref: '#/components/schemas/DeploymentStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          example: jane.doe@example.com
+        rollbackOf:
+          type: string
+          format: uuid
+          description: Set when this deployment is a rollback of another deployment
+
+    DeploymentCreate:
+      type: object
+      required: [service, environment, version]
+      properties:
+        service:
+          type: string
+          example: billing-service
+        environment:
+          type: string
+          example: production
+        version:
+          type: string
+          example: 2.14.0
+        strategy:
+          type: string
+          enum: [rolling, blue_green, canary]
+          default: rolling
+
+    DeploymentList:
+      type: object
+      required: [deployments]
+      properties:
+        deployments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deployment'
+        nextPageToken:
+          type: string
+          description: Present when more results are available
+
+    DeploymentEvent:
+      type: object
+      required: [timestamp, type, message]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [status_change, health_check, scaling, alert]
+        message:
+          type: string
+          example: "Health checks passed on 3/3 instances"
+
+    Environment:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+          example: production
+        type:
+          type: string
+          enum: [development, staging, production]
+        requiresApproval:
+          type: boolean
+          default: false
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: deployment_in_progress
+        message:
+          type: string
+          example: A deployment for billing-service is already in progress in production
+        details:
+          type: object
+          additionalProperties: true

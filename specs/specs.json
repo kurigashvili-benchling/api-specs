@@ -1,0 +1,8 @@
+{
+  "specs": [
+    {
+      "name": "Deployment API",
+      "url": "specs/deployment-api.yaml"
+    }
+  ]
+}
